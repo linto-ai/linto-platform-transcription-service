@@ -8,6 +8,9 @@ class StepState(str, Enum):
     DONE = "done"
     FAILED = "failed"
 
+    def __str__(self):
+        return self.value
+
 
 class StepProgression:
     def __init__(self, required: bool, initial_state: StepState = StepState.PENDING):
@@ -18,7 +21,7 @@ class StepProgression:
     def toDict(self) -> dict:
         ret = {"required": self.required}
         if self.required:
-            ret["status"] = f"{self._state}"
+            ret["status"] = str(self._state)
             ret["progress"] = self.progress
         return ret
 

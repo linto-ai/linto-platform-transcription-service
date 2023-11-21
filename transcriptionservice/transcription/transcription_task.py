@@ -5,16 +5,24 @@ import time
 
 from transcriptionservice.broker.celeryapp import celery
 from transcriptionservice.server.mongodb.db_client import DBClient
-from transcriptionservice.transcription.configs.transcriptionconfig import \
-    TranscriptionConfig
-from transcriptionservice.transcription.transcription_result import \
-    TranscriptionResult
+from transcriptionservice.transcription.configs.transcriptionconfig import (
+    TranscriptionConfig,
+)
+from transcriptionservice.transcription.transcription_result import TranscriptionResult
 from transcriptionservice.transcription.utils.audio import (
-    splitFile, splitUsingTimestamps, transcoding)
+    splitFile,
+    splitUsingTimestamps,
+    transcoding,
+    getDuration,
+)
 from transcriptionservice.transcription.utils.serviceresolve import (
-    ResolveException, ServiceResolver)
+    ResolveException,
+    ServiceResolver,
+)
 from transcriptionservice.transcription.utils.taskprogression import (
-    StepState, TaskProgression)
+    StepState,
+    TaskProgression,
+)
 
 __all__ = ["transcription_task"]
 
@@ -119,15 +127,39 @@ def transcription_task(self, task_info: dict, file_path: str):
 
     if available_transcription is None:
         # Split using VAD
-        if not task_info["timestamps"]:
-            logging.info(f"Spliting using VAD ...")
-            subfiles, total_duration = splitFile(file_name)
-
-        else:
+        if task_info["timestamps"]:
             logging.info(f"Split using provided timestamps ...")
-            subfiles, total_duration = splitUsingTimestamps(file_name, task_info["timestamps"])
-
-        logging.info(f"Input file has been split into {len(subfiles)} subfiles")
+            subfiles, total_duration = splitUsingTimestamps(
+                file_name, task_info["timestamps"]
+            )
+            logging.info(f"Input file has been split into {len(subfiles)} subfiles")
+        elif not config.vadConfig.isEnabled:
+            logging.info(f"Split in one chunk (VAD disabled)")
+            total_duration = getDuration(file_name)
+            subfiles = [(file_name, 0.0, total_duration)]
+        else:
+            logging.info(f"Splitting using VAD ...")
+            if config.vadConfig.minDuration:
+                # Values for ASR like Whisper which pad small segments anyway
+                kwargs = {
+                    "min_segment_duration": config.vadConfig.minDuration,
+                    "min_length": config.vadConfig.minDuration,
+                    # "min_silence": 0.6,
+                }
+            else:
+                # Historical values for Kaldi
+                kwargs = {
+                    "min_segment_duration": None,
+                    "min_length": 10,
+                    # "min_silence": 0.6,
+                }
+            subfiles, stats_duration = splitFile(
+                file_name,
+                method=config.vadConfig.methodName,
+                **kwargs,
+            )
+            total_duration = stats_duration["total"]
+            logging.info(f"Split in {len(subfiles)} chunks of around {config.vadConfig.minDuration} seconds ({', '.join([k+'='+str(round(v, 2)) for k,v in stats_duration.items()])})")
 
         # Progress monitoring
         speakers = None
@@ -149,7 +181,9 @@ def transcription_task(self, task_info: dict, file_path: str):
 
     # Diarization (In parallel)
     if config.diarizationConfig.isEnabled:
-        logging.info(f"Processing diarization task on {config.diarizationConfig.serviceQueue}...")
+        logging.info(
+            f"Processing diarization task on {config.diarizationConfig.serviceQueue}..."
+        )
         progress.steps["diarization"].state = StepState.STARTED
         diarJobId = celery.send_task(
             name=config.diarizationConfig.task_name,
@@ -165,15 +199,16 @@ def transcription_task(self, task_info: dict, file_path: str):
     # Wait for all the transcription jobs
     if available_transcription is None:
         transcriptions = []
-        pc_trans = 0.0
         failed = False
+        transcription = None
         for jobId, offset, duration, subfile_path in transJobIds:
             if failed:
+                if subfile_path != file_name and os.path.exists(subfile_path):
+                    os.remove(subfile_path)
                 jobId.revoke()
-                os.remove(subfile_path)
                 continue
             transcription = jobId.get(disable_sync_subtasks=False)
-            if len(transJobIds) > 1:
+            if subfile_path != file_name and os.path.exists(subfile_path):
                 os.remove(subfile_path)
             if jobId.status == "FAILURE":
                 failed = True
@@ -218,7 +253,9 @@ def transcription_task(self, task_info: dict, file_path: str):
 
     # Punctuation
     if config.punctuationConfig.isEnabled:
-        logging.info(f"Processing punctuation task on {config.punctuationConfig.serviceQueue} ...")
+        logging.info(
+            f"Processing punctuation task on {config.punctuationConfig.serviceQueue} ..."
+        )
         progress.steps["punctuation"].state = StepState.STARTED
         self.update_state(state="STARTED", meta=progress.toDict())
         puncJobId = celery.send_task(
@@ -237,6 +274,7 @@ def transcription_task(self, task_info: dict, file_path: str):
         transcription_result.setProcessedSegment(punctuated_text)
 
     logging.info(f"Task complete, post processing ...")
+
     # Write result in database
     progress.steps["postprocessing"].state = StepState.STARTED
     self.update_state(state="STARTED", meta=progress.toDict())
@@ -257,6 +295,156 @@ def transcription_task(self, task_info: dict, file_path: str):
         try:
             os.remove(file_name)
         except Exception as e:
-            logging.warning("Failed to remove ressource {}".format(file_path))
+            logging.warning("Failed to remove ressource {}".format(file_name))
+    progress.steps["postprocessing"].state = StepState.DONE
+    return result_id
+
+
+@celery.task(name="transcription_task_multi", bind=True)
+def transcription_task_multi(self, task_info: dict, files_info: list):
+    
+    # TODO: factorize with transcription_task()
+
+    # Logging task
+    logging.basicConfig(
+        filename=f"/usr/src/app/logs/{self.request.id}.txt",
+        filemode="a",
+        format="%(asctime)s,%(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.DEBUG,
+        force=True,
+    )
+    logging.info(f"Running task {self.request.id}")
+
+    self.update_state(state="STARTED", meta={"steps": {}})
+
+    config = TranscriptionConfig(task_info["transcription_config"])
+
+    # Resolve required task queues
+    resolver = ServiceResolver()
+
+    for task in config.tasks:
+        try:
+            resolver.resolve_task(task)
+            logging.info(
+                f"Task {task} successfuly resolved -> {task.serviceName}:{task.serviceQueue} (Policy={resolver.service_policy})"
+            )
+        except ResolveException as error:
+            logging.error(str(error))
+            raise ResolveException(f"Failed to resolve: {str(error)}")
+
+    # Task progression
+    progress = TaskProgression(
+        [
+            ("preprocessing", True),
+            ("transcription", True),
+            ("diarization", config.diarizationConfig.isEnabled),
+            ("punctuation", config.punctuationConfig.isEnabled),
+            ("postprocessing", True),
+        ]
+    )
+    progress.steps["preprocessing"].state = StepState.STARTED
+    self.update_state(state="STARTED", meta=progress.toDict())
+
+    # Preprocessing
+    ## Transtyping
+    logging.info(f"Converting input files to wav.")
+    transJobIds = []
+    total_duration = 0.0
+    for file_info in files_info:
+        file_name = transcoding(file_info["file_path"])
+        # Check for available transcription
+        logging.info(
+            "Checking for available transcription for {}".format(file_info["filename"])
+        )
+        try:
+            available_transcription = db_client.fetch_transcription(file_info["hash"])
+        except Exception as e:
+            logging.warning("Failed to fetch transcription: {}".format(str(e)))
+            available_transcription = None
+
+        # if available_transcription:
+        #    continue
+
+        # Split file
+        subfiles, stats_duration = splitFile(file_name)
+        total_duration += stats_duration["total"]
+        logging.info(
+            "{} splitted into {} subfiles.".format(file_info["filename"], len(subfiles))
+        )
+
+        # transcription jobs
+        progress.steps["transcription"].state = StepState.STARTED
+        for subfile_path, offset, duration in subfiles:
+            transJobId = celery.send_task(
+                name="transcribe_task",
+                queue=task_info["service_name"],
+                args=[subfile_path, True],
+            )
+            logging.info(f"Created job {transJobId} for subfile {subfile_path}.")
+            transJobIds.append(
+                (transJobId, offset, duration, subfile_path, file_info["filename"])
+            )
+
+    progress.steps["preprocessing"].state = StepState.DONE
+    self.update_state(state="STARTED", meta=progress.toDict())
+
+    # Wait for transcriptions results
+    transcriptions = []
+    pc_trans = 0.0
+    failed = False
+    logging.info(f"Waiting for transcription results ...")
+    for jobId, offset, duration, subfile_path, file_name in transJobIds:
+        if failed:
+            jobId.revoke()
+            os.remove(subfile_path)
+            continue
+        transcription = jobId.get(disable_sync_subtasks=False)
+
+        if len(transJobIds) > 1:
+            os.remove(subfile_path)
+        if jobId.status == "FAILURE":
+            failed = True
+            continue
+        transcriptions.append((transcription, offset, os.path.basename(file_name)))
+        progress.steps["transcription"].progress += duration / total_duration
+        self.update_state(state="STARTED", meta=progress.toDict())
+    logging.info(f"Transcription task complete")
+    progress.steps["transcription"].state = StepState.DONE
+
+    self.update_state(state="STARTED", meta=progress.toDict())
+
+    if failed:
+        raise Exception("Transcription has failed: {}".format(transcription))
+
+    # Merge Transcription results
+    transcription_result = TranscriptionResult(
+        [value[:2] for value in transcriptions], [value[2] for value in transcriptions]
+    )
+
+    # Write result in database
+    progress.steps["postprocessing"].state = StepState.STARTED
+    self.update_state(state="STARTED", meta=progress.toDict())
+    try:
+        result_id = db_client.push_result(
+            file_hash="multifile",
+            job_id=self.request.id,
+            origin="origin",
+            service_name=task_info["service_name"],
+            config=config,
+            result=transcription_result,
+        )
+    except Exception as e:
+        raise Exception("Failed to process result")
+
+    # Free ressource
+    if not task_info["keep_audio"]:
+        for file_info in files_info:
+            try:
+                os.remove(file_info["file_path"])
+            except Exception as e:
+                logging.warning(
+                    "Failed to remove ressource {}".format(file_info["file_path"])
+                )
     progress.steps["postprocessing"].state = StepState.DONE
     return result_id

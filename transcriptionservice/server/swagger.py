@@ -10,7 +10,7 @@ def setupSwaggerUI(app, args):
     # Setup additionnal servers
     if os.environ.get("SWAGGER_URLS", None):
         server_urls = os.environ.get("SWAGGER_URLS").split(",")
-        swagger_yml["servers"] = [{"url:": url, "description": url} for url in server_urls]
+        swagger_yml["servers"] = [{"url": url, "description": url} for url in server_urls]
 
     swaggerui = get_swaggerui_blueprint(
         # Swagger UI static files will be mapped to '{SWAGGER_URL}/dist/'

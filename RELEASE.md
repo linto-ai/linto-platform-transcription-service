@@ -1,3 +1,36 @@
+# 1.2.9
+ - Avoid a 1H timeout that was causing celery task to re-run (and fail)
+ - VAD: Improve heuristics about audio segment durations to better adapt to Whisper setting (minDuration=30)
+ - Preserve exponents ("²") in word normalization
+
+# 1.2.8
+ - In full transcription: proper normalization of spaces before/after traditional punctuation marks (for French and English at least)
+ - In word normalization: improve distinction of characters (word / punctuation / symbol that can be pronounced / garbage symbol)
+ - Fix typo fr_FR -> fr-FR
+ - Fix inconsistency in transcription confidence score (now always computed from word confidence scores, not segment confidence scores)
+
+# 1.2.7
+ - Remove punctuations in words (to avoid spaces as in "allez-vous ?")
+
+# 1.2.6
+ - Fix possible worker conflict when multiple workers are running on the same file
+    (the audio file could be deleted by the worker that first finishes)
+ - Fix speaker segment splitted in two when diarization detects another speaker with no word assigned.
+ - Fix a bug in the formatting progression "status" ("StepState.PENDING" -> "pending"),
+    which was introduced because python version was not fixed in Dockerfile (python 3.11 changes behaviour when converting enum to string)
+
+# 1.2.5
+ - Add options for VAD (minimum duration of segments, ...)
+
+# 1.2.4
+ - Fix corner case of empty transcriptions
+ - Fix corner cases to assign words to speaker turns (overlapping diarization segments, words in between two segments)
+
+# 1.2.3
+ - Added multifiles route and processing.
+ - Changed straddling word diarization resolve
+ - Added diarization results within transcription result.
+
 # 1.2.2
  - Added recover to redis search index drop.
 

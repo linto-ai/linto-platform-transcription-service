@@ -2,7 +2,7 @@ version: '3.7'
 
 services:
   transcription-service:
-    image: transcription_service:1.2.0
+    image: transcription_service:1.2.3
     volumes:
       - $SHARED_FOLDER/audio:/opt/audio
     env_file: .env

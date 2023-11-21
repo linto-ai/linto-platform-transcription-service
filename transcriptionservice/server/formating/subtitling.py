@@ -166,7 +166,11 @@ class Subtitles:
             processed_words = segment.raw_segment.split(" ")
         else:
             processed_words = segment.processed_segment.split(" ")
+
+        # TODO: there is a too strong assumption, which does not apply to ASR models like Whisper.
+        #       Because Whisper can output punctuation marks that not (always) glued to the previous words.
         assert len(processed_words) == len(segment.words), "Processed word count mismatch"
+
         for i, word in enumerate(segment.words[:-1]):
             current_words.append((word, processed_words[i]))
             if (

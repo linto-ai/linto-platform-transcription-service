@@ -4,6 +4,7 @@ from faulthandler import is_enabled
 from typing import Union
 
 from transcriptionservice.transcription.configs.sharedconfig import Config
+from transcriptionservice.transcription.utils.audio import validate_vad_method
 
 
 class TaskConfig(Config):
@@ -58,7 +59,9 @@ class DiarizationConfig(TaskConfig):
     {
       "enableDiarization": boolean (false),
       "numberOfSpeaker": integer (null),
-      "maxNumberOfSpeaker": integer (null)
+      "maxNumberOfSpeaker": integer (null),
+      "serviceName": string (null),
+      "serviceQueue": string (null)
     }
     ```
     """
@@ -98,3 +101,35 @@ class DiarizationConfig(TaskConfig):
                         self.maxNumberOfSpeaker = None
         else:
             self.enableDiarization = False
+
+
+class VADConfig(Config):
+    """VADConfig parses and holds VAD related configuration.
+    Expected configuration format is as follows:
+    ```json
+    {
+      "enableVAD": boolean (true),
+      "methodName": string ("WebRTC"),
+      "minDuration": float (0.0)
+    }
+    ```
+    """
+
+    _keys_default = {
+        "enableVAD": True,
+        "methodName": "WebRTC",
+        "minDuration": 0,
+    }
+
+    def __init__(self, config: Union[str, dict] = {}):
+        super().__init__(config)
+        self._checkConfig()
+        self.isEnabled = self.enableVAD
+
+    def _checkConfig(self):
+        """Check VAD parameters."""
+
+        if self.methodName is None and not self.enableVAD:
+            pass
+        else:
+            self.methodName = validate_vad_method(self.methodName)

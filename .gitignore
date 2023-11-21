@@ -3,5 +3,4 @@
 .vscode
 .envcontainer
 start_*
-test_*
 *.wav

@@ -93,7 +93,7 @@ class DBClient:
         config: TranscriptionConfig,
         result: TranscriptionResult,
     ) -> str:
-        """Insert final result in the results collection and returns a ressource_id"""
+        """Insert final result in the results collection and returns a result_id"""
         ressource_id = str(uuid4())
         self.results_collection.find_one_and_update(
             {"_id": ressource_id},

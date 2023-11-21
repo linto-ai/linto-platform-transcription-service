@@ -17,9 +17,11 @@ The service allows you to:
   * [Environement Variables](#environement-variables)
 * [API](#api)
   * [/list-services](#environement-variables)
+      * [Subservice resolution](#subservice-resolution)
   * [/transcribe](#transcribe)
-    * [Subservice resolution](#subservice-resolution)
     * [Transcription config](#transcription-config)
+  * [/transcribe-multi](#transcribe-multi)
+    * [MultiTranscription config](#multitranscription-config)
   * [/job/{jobid}](#job)
   * [/results/{result_id}](#results)
     * [Transcription results](#transcription-results)
@@ -82,7 +84,7 @@ docker-compose up .
 | Env variable| Description | Example |
 |:-|:-|:-|
 |SERVICE_NAME| STT service name, use to connect to the proper redis channel and mongo collection|my_stt_service|
-|LANGUAGE| Language code as a BCP-47 code | fr_FR |
+|LANGUAGE| Language code as a BCP-47 code | fr-FR |
 |KEEP_AUDIO|Either audio files are kept after request|1 (true) / 0 (false)|
 |CONCURRENCY|Number of workers (default 10)|10|
 |SERVICES_BROKER|Message broker address|redis://broker_address:6379|
@@ -150,14 +152,26 @@ It returns a json object containing list of deployed services indexed by service
 }
 
 ```
+#### Subservice resolution
+Subservice resolution is the mecanism allowing the transcription service to use the proper optionnal subservice such as diarization or punctuation prediction. Resolution is applied when no serviceName is passed along subtask configs. 
+
+There is 3 policies to resolve service names:
+* ANY: Use any compatible subservice.
+* DEFAULT: Use the service default subservice (must be declared)
+* STRICT: If the service is not specified, raise an error.
+
+Resolve policy is declared at launch using the RESOLVE_POLICY environement variable: ANY | DEFAULT | STRICT (default ANY).
+
+Default service names must be declared at launch: <SERVICE_TYPE>_DEFAULT. E.g. The default punctuation subservice is "punctuation-1", `PUNCTUATION_DEFAULT=punctuation1`.
+
 __Language compatibily__
 
 A subservice is compatible if its language(s) is(are) compatible with the transcription-service language:
 
 transcription-service language <-> subservice language.
-* Same BCP-27 code: fr_Fr <-> fr_FR => OK
-* Language contained: fr_FR <-> fr_FR|it_IT|en_US => OK
-* Star token (all_language): fr_FR <-> * => OK
+* Same BCP-27 code: fr_Fr <-> fr-FR => OK
+* Language contained: fr-FR <-> fr-FR|it_IT|en_US => OK
+* Star token (all_language): fr-FR <-> * => OK
 
 
 ### /transcribe
@@ -214,17 +228,42 @@ The transcriptionConfig object describe the transcription parameters and flags o
 
 ServiceNames can be filled to use a specific subservice version. Available services are available on /list-services.
 
-#### Subservice resolution
-Subservice resolution is the mecanism allowing the transcription service to use the proper optionnal subservice such as diarization or punctuation prediction. Resolution is applied when no serviceName is passed along subtask configs. 
 
-There is 3 policies to resolve service names:
-* ANY: Use any compatible subservice.
-* DEFAULT: Use the service default subservice (must be declared)
-* STRICT: If the service is not specified, raise an error.
 
-Resolve policy is declared at launch using the RESOLVE_POLICY environement variable: ANY | DEFAULT | STRICT (default ANY).
+### /transcribe-multi
+The /transcribe-multi route allows POST request containing multiple audio files. It is assumed each file contains a speaker or a group of speaker and files taken together form a conversation.
 
-Default service names must be declared at launch: <SERVICE_TYPE>_DEFAULT. E.g. The default punctuation subservice is "punctuation-1", `PUNCTUATION_DEFAULT=punctuation1`.
+The route accepts multipart/form-data requests.
+
+Response format can be application/json or text/plain as specified in the accept field of the header.
+
+|Form Parameter| Description | Required |
+|:-|:-|:-|
+|transcriptionConfigMulti|(object optionnal) A transcriptionConfig Object describing transcription parameters | See [MultiTranscription config](#multitranscription-config) |
+
+
+If the request is accepted, answer should be ```201``` with a json or text response containing the jobid.
+
+With accept: application/json
+```json
+{"jobid" : "the-job-id"}
+```
+With accept: text/plain
+```
+the-job-id
+```
+
+#### MultiTranscription config
+
+The transcriptionConfig object describe the transcription parameters and flags of the request. It is structured as follows:
+```json
+{
+  "punctuationConfig": {
+    "enablePunctuation": false, # Applies punctuation
+    "serviceName": null # Force serviceName (See SubService resolution)
+  }
+}
+```
 
 ### /job/
 
