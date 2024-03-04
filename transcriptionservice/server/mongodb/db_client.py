@@ -12,7 +12,7 @@ from transcriptionservice.transcription.transcription_result import \
 """ The Databases is structured as follows:
 
 A transcription service uses a database named transcriptiondb in which there are 2 collections:
-- A collection named after the SERVICE_NAME to store raw transcription result associated with the associated running linto-platform-stt service.
+- A collection named after the SERVICE_NAME to store raw transcription result associated with the associated running linto-stt service.
 Those transcriptions are indexed using the audio file hashcode before transcoding and contain the transcription datetime and words information.
 - A collection named "results" to store final transcriptions (includes diarization, punctuation data and post-processing). This collection is shared by all running
 transcription services. The final transcription are indexed using a unique result_id and contains in addition to the result itself data related to 

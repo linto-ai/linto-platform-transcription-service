@@ -1,3 +1,7 @@
+# 1.2.10
+ - Add heuristics to avoid too long speech segment sent to STT (limit risk of memory overflow)
+ - Fix failure with token "- Et"
+
 # 1.2.9
  - Avoid a 1H timeout that was causing celery task to re-run (and fail)
  - VAD: Improve heuristics about audio segment durations to better adapt to Whisper setting (minDuration=30)

@@ -61,6 +61,8 @@ class TestFormating(unittest.TestCase):
             ("“2004,”", "2004"),
             # Replace punctuations with spaces
             ("2004, «", "2004"),
+            ("– Et", "Et"),
+            ("- Et", "Et"),
             (puncs + " " + puncs + "hello" + puncs + " " + puncs, "hello"),
             (puncs + " " + puncs + " hello " + puncs + " " + puncs, "hello"),
             (puncs + " " + puncs + "'hello'" + puncs + " " + puncs, "'hello'"),
@@ -69,6 +71,10 @@ class TestFormating(unittest.TestCase):
             ("hello '", "hello"),
             ("3 $", "3"), ("3 %", "3"), ("3 €", "3"),
             ("3 🎵", "3"),
+            ("-", "-"),
+            ("' hello", "hello"),
+            ("hello '", "hello"),
+            ("' hello '", "hello"),
         ]:
             self.assertEqual(
                 removeWordPunctuations(input),
@@ -81,6 +87,7 @@ class TestFormating(unittest.TestCase):
             "🎵",
             "*", "***", "[...]",
             "<", ">", "<>", "< >",
+            "–",
             ]:
             self.assertEqual(
                 removeWordPunctuations(input),
@@ -91,11 +98,10 @@ class TestFormating(unittest.TestCase):
         for input in [
             # Several words
             "hello world",
-            # Corner cases
-            "' hello '",
-            "' hello",
+            "sa -mère",
+            "son' père",
         ]:
-            self.assertRaises(AssertionError,
+            self.assertRaises(RuntimeError,
                 removeWordPunctuations,
                 input,
             )

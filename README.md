@@ -33,7 +33,7 @@ The service allows you to:
 
 ## Prerequisites
 To use the transcription service you must have at least:
-* One or multiple instances of [linto-platform-stt](https://github.com/linto-ai/linto-platform-stt) > 3.2.0 running and configured with the same `SERVICE_NAME`.
+* One or multiple instances of [linto-stt](https://github.com/linto-ai/linto-stt) running and configured with the same `SERVICE_NAME`.
 * A REDIS broker running at `SERVICES_BROKER`.
 * A mongo DB running at `MONGO_HOST:MONGO_PORT`.
 

@@ -78,8 +78,11 @@ def removeWordPunctuations(text: str, ensure_no_spaces_in_words: bool=True) -> s
     # Ensure that there is no space in the middle of a word
     if ensure_no_spaces_in_words and " " in new_text:
         logger.warning(f"Got unexpected word containing space: {new_text}")
-        new_text, tail = new_text.split(" ", 1)
-        # OK if the tail only contains non alphanumeric characters (then we just keep the first part)
-        assert not re.search(r"[^\W\d\'\-_]", tail), f"Got unexpected word containing space: {text}"
+        first, second = new_text.split(" ", 1)
+        first_is_word = bool(re.search(r"[^\W\'\-_]", first))
+        second_is_word = bool(re.search(r"[^\W\'\-_]", second))
+        if first_is_word and second_is_word:
+            raise RuntimeError(f"Got unexpected word containing space: '{new_text}'")
+        new_text = first if first_is_word else second
         return removeWordPunctuations(new_text, ensure_no_spaces_in_words=ensure_no_spaces_in_words)
     return new_text

@@ -143,6 +143,7 @@ def transcription_task(self, task_info: dict, file_path: str):
                 # Values for ASR like Whisper which pad small segments anyway
                 kwargs = {
                     "min_segment_duration": config.vadConfig.minDuration,
+                    "max_segment_duration": config.vadConfig.maxDuration,
                     "min_length": config.vadConfig.minDuration,
                     # "min_silence": 0.6,
                 }
@@ -150,6 +151,7 @@ def transcription_task(self, task_info: dict, file_path: str):
                 # Historical values for Kaldi
                 kwargs = {
                     "min_segment_duration": None,
+                    "max_segment_duration": 1200.0, # New, to avoid memory errors
                     "min_length": 10,
                     # "min_silence": 0.6,
                 }
