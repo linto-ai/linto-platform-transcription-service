@@ -180,7 +180,7 @@ class TranscriptionResult:
 
         # Iterate over segments and words to create speech segments
         for i, word in enumerate(self.words):
-            while not self._resolveWordSegment(i, self.diarizationSegments[seg_index]):
+            while not self._resolveWordSegment(i, seg_index):
                 # Next segment
                 if seg_index + 1 < len(self.diarizationSegments):
                     seg_index += 1
@@ -203,29 +203,80 @@ class TranscriptionResult:
                 self.segments[-1].words += current_words
 
     def _resolveWordSegment(
-        self, word_index: int, current_diarization_seg: dict
+        self,
+        word_index: int,
+        diarization_index: int,
+        precision: float = 0.25,
     ) -> bool:
-        """Applies word placement rules and decides if the word belong to the current_segment (True) or to the next (False)"""
-        word_start = self.words[word_index].start
-        word_end = self.words[word_index].end
+        """
+        Applies word placement rules and decides if the word belong to the current_segment (True) or to the next (False)
+
+        Args:
+            word_index (int): Index of the word to place
+            diarization_index (int): Index of the current diarization segment
+            precision (float): Precision to decide if a word is within a segment (in seconds)
+        """
+        if diarization_index == len(self.diarizationSegments) - 1:
+            # Stay on current segment if it is the last one
+            return True
+
+        word = self.words[word_index]
+        word_start = word.start
+        word_end = word.end
+        current_diarization_seg = self.diarizationSegments[diarization_index]
+
         # Word completely within current segment
-        if word_end <= current_diarization_seg.seg_end:
+        if word_end <= current_diarization_seg.seg_end - precision:
             return True
+
         # Word completely outside current segment
-        if word_start >= current_diarization_seg.seg_end:
+        if word_start >= current_diarization_seg.seg_end + precision:
             return False
-        # Word straddling two segments
+
+        # Otherwise (following), word straddling two segments
+
         if not word_index:
-            return False
+            # Assign first word to first segment
+            return True
         if word_index == len(self.words) - 1:
-            return True
+            # Assign last word to last segment
+            return False
+
         # Decide based on the distance with the previous and the next words
-        if (
-            word_start - self.words[word_index - 1].end
-            <= self.words[word_index + 1].start - word_end
-        ):
-            return True
-        return False
+        # if one exceeds a certain threshold seconds
+        gap_previous_word = word_start - self.words[word_index - 1].end
+        gap_next_word = self.words[word_index + 1].start - word_end
+        if max(gap_previous_word, gap_next_word) >= precision:
+            return gap_previous_word <= gap_next_word
+
+        if word_index > 0:
+            # If the previous word ends with a punctuation, cut there
+            previous_word = self.words[word_index - 1]
+            if previous_word.word and previous_word.word[-1] in ".!?":
+                return False
+            elif word.word and word.word[-1] in ".!?":
+                return True
+
+        # Otherwise, look at what happens with the next segment
+        next_diarization_seg = self.diarizationSegments[diarization_index + 1]
+        word_len = word_end - word_start
+        overlap_previous = current_diarization_seg.seg_end - word_start
+        overlap_next = word_end - next_diarization_seg.seg_begin
+
+        # Should we do something more when a segment is really to short?
+        # new_segment_len = next_diarization_seg.seg_end - next_diarization_seg.seg_begin
+        # current_segment_len = current_diarization_seg.seg_end - current_diarization_seg.seg_begin
+        # current_segment_is_short = current_segment_len < word_len * 2
+        # next_segment_is_short = new_segment_len < word_len * 2
+        # if current_segment_is_short and not next_segment_is_short:
+        #     # Tend to assign words to the next segment if it is short
+        #     return True
+        # if next_segment_is_short and not current_segment_is_short:
+        #     # Tend to assign words to the current segment if it is short
+        #     return False
+
+        # Assign to the segment with the higher overlap
+        return overlap_previous > overlap_next
 
     def setNoDiarization(self):
         """Convert word data into a speech segment when there is no diarization"""

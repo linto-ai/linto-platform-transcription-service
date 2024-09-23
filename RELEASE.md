@@ -1,3 +1,6 @@
+# 1.2.11
+ - Improve heuristics to merge transcription and diarization results (for words in between two speaker turns)
+
 # 1.2.10
  - Add heuristics to avoid too long speech segment sent to STT (limit risk of memory overflow)
  - Fix failure with token "- Et"

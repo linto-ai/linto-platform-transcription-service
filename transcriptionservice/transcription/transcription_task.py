@@ -2,6 +2,7 @@
 import logging
 import os
 import time
+import celery.states as celery_states
 
 from transcriptionservice.broker.celeryapp import celery
 from transcriptionservice.server.mongodb.db_client import DBClient
@@ -106,7 +107,7 @@ def transcription_task(self, task_info: dict, file_path: str):
     file_name = transcoding(file_path)
 
     # Check for available transcription
-    logging.info(f"Checking for available transcription")
+    logging.info(f"Checking for available transcription for {task_info['hash']}")
 
     if not task_info["timestamps"]:
         available_transcription = db_client.fetch_transcription(task_info["hash"])
@@ -212,7 +213,7 @@ def transcription_task(self, task_info: dict, file_path: str):
             transcription = jobId.get(disable_sync_subtasks=False)
             if subfile_path != file_name and os.path.exists(subfile_path):
                 os.remove(subfile_path)
-            if jobId.status == "FAILURE":
+            if jobId.status != celery_states.SUCCESS:
                 failed = True
                 continue
             transcriptions.append((transcription, offset))
@@ -246,10 +247,9 @@ def transcription_task(self, task_info: dict, file_path: str):
         progress.steps["diarization"].state = StepState.DONE
         self.update_state(state="STARTED", meta=progress.toDict())
         logging.info(f"Diarization task complete")
-        if diarJobId.status == "FAILURE":
+        if diarJobId.status != celery_states.SUCCESS:
             raise Exception("Diarization has failed: {}".format(speakers))
-        else:
-            transcription_result.setDiarizationResult(speakers)
+        transcription_result.setDiarizationResult(speakers)
     elif not task_info["timestamps"]:
         transcription_result.setNoDiarization()
 
@@ -405,7 +405,7 @@ def transcription_task_multi(self, task_info: dict, files_info: list):
 
         if len(transJobIds) > 1:
             os.remove(subfile_path)
-        if jobId.status == "FAILURE":
+        if jobId.status != celery_states.SUCCESS:
             failed = True
             continue
         transcriptions.append((transcription, offset, os.path.basename(file_name)))
